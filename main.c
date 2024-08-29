@@ -1,40 +1,53 @@
 #include "shell.h"
 
-/**
- * main - implements a simple shell
- *
- * Return: EXIT_SUCCESS.
- */
-int main(void)
+int main(int argc __attribute__((unused)), char **argv)
 {
-	char *input;
-	char **args;
-	int status;
+	appData_t *appData = NULL;
+	int cLoop;
+	void (*func)(appData_t *);
 
-	/* Register signal handlers */
-	signal(SIGINT, handle_sigint);
-	signal(SIGQUIT, handle_sigquit);
-	signal(SIGTSTP, handle_sigstp);
+	appData = _initData(argv);
 
 	do {
-		input = get_input();
-		if (!input || !*input)/* EOF detected, exit the loop */
-			break;
+		signal(SIGINT, _ctrlC);
+		_prompt();
+		_getline(appData);
 
-		args = tokenize_input(input);
-		if (!args || !*args)
+		appData->history = _strtow(appData->buffer, COMMAND_SEPARATOR, ESCAPE_SEPARATOR);
+		if (appData->history == NULL)
 		{
-			free(input);
-			free_tokens(args);
+			_freeAppData(appData);
+			free(appData);
 			continue;
 		}
-		status = execute(args);
-		free(input);
-		free_tokens(args);
+		for (cLoop = 0; appData->history[cLoop] != NULL; cLoop++)
+		{
+			appData->arguments = _strtow(appData->history[cLoop], SEPARATORS, ESCAPE_SEPARATOR);
 
-		/* Set status to 1 to continue the loop */
-		status = 1;
-	} while (status);
-
+			if (appData->arguments == NULL)
+			{
+				_freeAppData(appData);
+				_freeEnvList(appData->env);
+				appData->env = NULL;
+				free(appData);
+				appData = NULL;
+				break;
+			}
+			appData->commandName = _strdup(appData->arguments[0]);
+			if (appData->commandName != NULL)
+			{
+				func = _getCustomFunction(appData->commandName);
+				if (func != NULL)
+					func(appData);
+				else
+					_execCommand(appData);
+			}
+			_freeCharDoublePointer(appData->arguments);
+			appData->arguments = NULL;
+			free(appData->commandName);
+			appData->commandName = NULL;
+		}
+		_freeAppData(appData);
+	} while (1);
 	return (EXIT_SUCCESS);
 }
